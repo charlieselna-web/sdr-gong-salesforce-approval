@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
   issues: write
 
 jobs:
@@ -14,7 +14,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Placeholder intake step
+      - name: Create test approval issue
         run: |
-          echo "Gong intake workflow is set up."
-          echo "Next step: add scripts/poll_gong_calls.py"
+          python scripts/poll_gong_calls.py
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
