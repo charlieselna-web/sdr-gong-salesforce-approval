@@ -3,22 +3,77 @@ import json
 import subprocess
 import textwrap
 from datetime import datetime, timezone
+from pathlib import Path
+
+
+def run(command):
+    return subprocess.run(
+        command,
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+
+
+def git_commit_and_push(path, approval_id):
+    run(["git", "config", "user.name", "github-actions[bot]"])
+    run([
+        "git",
+        "config",
+        "user.email",
+        "41898282+github-actions[bot]@users.noreply.github.com",
+    ])
+
+    run(["git", "add", str(path)])
+
+    commit = subprocess.run(
+        ["git", "commit", "-m", f"Add approval payload {approval_id}"],
+        text=True,
+        capture_output=True,
+    )
+
+    if commit.returncode != 0:
+        output = commit.stdout + commit.stderr
+        if "nothing to commit" in output:
+            print("Nothing to commit.")
+            return
+        print(output)
+        raise RuntimeError("git commit failed")
+
+    push = run(["git", "push"])
+    print(push.stdout)
 
 
 def main():
-    approval_id = "gong-test-001"
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+    approval_id = f"gong-test-{timestamp}"
 
     payload = {
         "approval_id": approval_id,
         "status": "pending_approval",
-        "gong_call_id": "test-gong-call-001",
+        "gong_call_id": f"test-gong-call-{timestamp}",
         "sdr": "Charlie Selna",
         "company": "Acme Corp",
         "salesforce_match": {
-            "account": "Acme Corp / 001TEST",
-            "contact": "Jane Buyer / 003TEST",
+            "account": {
+                "name": "Acme Corp",
+                "id": "001TEST",
+                "confidence": "high",
+            },
+            "contact": {
+                "name": "Jane Buyer",
+                "id": "003TEST",
+                "email": "jane.buyer@acme.example",
+                "confidence": "high",
+            },
             "lead": None,
-            "opportunity": "Acme Initial Eval / 006TEST",
+            "opportunity": {
+                "name": "Acme Initial Eval",
+                "id": "006TEST",
+                "stage": "S0",
+                "is_open": True,
+                "confidence": "high",
+            },
         },
         "nant_notes": {
             "need": "Prospect wants to improve knowledge discovery across internal tools.",
@@ -27,6 +82,27 @@ def main():
             "timeline": "Initial evaluation this quarter.",
             "next_step": "Send follow-up and schedule technical discovery.",
         },
+        "proposed_salesforce_changes": [
+            {
+                "object": "Opportunity",
+                "id": "006TEST",
+                "fields": {
+                    "NANT_Notes__c": (
+                        "Need: Prospect wants to improve knowledge discovery across internal tools.\n"
+                        "Authority: Jane Buyer is evaluating vendors and will involve IT leadership.\n"
+                        "Negative consequences: Continued manual searching and duplicated work.\n"
+                        "Timeline: Initial evaluation this quarter.\n"
+                        "Next step: Send follow-up and schedule technical discovery."
+                    ),
+                    "NextStep": "Send follow-up and schedule technical discovery.",
+                    "Last_Gong_Call_ID__c": f"test-gong-call-{timestamp}",
+                },
+            }
+        ],
+        "duplicate_prevention": {
+            "idempotency_key": f"gong:test-gong-call-{timestamp}:sf:006TEST:nant:v1",
+            "status": "not_checked_yet",
+        },
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -34,7 +110,9 @@ def main():
         json.dumps(payload, sort_keys=True).encode("utf-8")
     ).hexdigest()
 
-    title = "TEST Approval needed: Acme Corp Gong call"
+    payload["approval_hash"] = approval_hash
+
+    title = f"TEST Approval needed: Acme Corp Gong call {timestamp}"
 
     body = textwrap.dedent(f"""
     ## Test Approval Request
@@ -49,10 +127,10 @@ def main():
 
     ## Matched Salesforce Records
 
-    - Account: {payload["salesforce_match"]["account"]}
-    - Contact: {payload["salesforce_match"]["contact"]}
+    - Account: {payload["salesforce_match"]["account"]["name"]} / `{payload["salesforce_match"]["account"]["id"]}`
+    - Contact: {payload["salesforce_match"]["contact"]["name"]} / `{payload["salesforce_match"]["contact"]["id"]}`
     - Lead: {payload["salesforce_match"]["lead"]}
-    - Open S0 Opportunity: {payload["salesforce_match"]["opportunity"]}
+    - Open S0 Opportunity: {payload["salesforce_match"]["opportunity"]["name"]} / `{payload["salesforce_match"]["opportunity"]["id"]}`
 
     ## Proposed NANT Notes
 
@@ -66,28 +144,10 @@ def main():
 
     **Next step:** {payload["nant_notes"]["next_step"]}
 
-    ## Approval
+    ## Proposed Salesforce Change
 
-    Approval ID:
+    Object: `Opportunity`
 
-    `{approval_id}`
+    ID: `{payload["salesforce_match"]["opportunity"]["id"]}`
 
-    Approval hash:
-
-    `{approval_hash}`
-
-    To approve later, you will comment:
-
-    `/approve {approval_hash}`
-    """)
-
-    subprocess.run(
-        ["gh", "issue", "create", "--title", title, "--body", body],
-        check=True,
-    )
-
-    print(f"Created test approval issue for {approval_id}")
-
-
-if __name__ == "__main__":
-    main()
+    Field: `NANT_Notes__c`
