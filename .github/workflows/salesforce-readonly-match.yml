@@ -14,6 +14,7 @@ on:
       account_name:
         description: "Optional account name, for example Acme Corp"
         required: false
+        default: ""
         type: string
 
 permissions:
@@ -26,10 +27,23 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Show repo files
+        run: |
+          echo "Current folder:"
+          pwd
+
+          echo "Repo files:"
+          find . -maxdepth 3 -type f | sort
+
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+
+      - name: Check Python script exists
+        run: |
+          test -f scripts/salesforce_readonly_match.py
+          python -m py_compile scripts/salesforce_readonly_match.py
 
       - name: Run Salesforce read-only matcher
         run: |
