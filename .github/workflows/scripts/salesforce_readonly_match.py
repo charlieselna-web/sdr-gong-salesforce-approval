@@ -3,7 +3,12 @@ import json
 import os
 import sys
 
-from simple_salesforce import Salesforce, SalesforceAuthenticationFailed, SalesforceMalformedRequest, format_soql
+from simple_salesforce import (
+    Salesforce,
+    SalesforceAuthenticationFailed,
+    SalesforceMalformedRequest,
+    format_soql,
+)
 
 
 def required_env(name):
@@ -177,7 +182,9 @@ def main():
     opportunities = []
 
     if account_ids:
-        account_id_list = ", ".join(soql_literal(account_id) for account_id in sorted(account_ids))
+        account_id_list = ", ".join(
+            soql_literal(account_id) for account_id in sorted(account_ids)
+        )
 
         opportunities = run_query(
             sf,
