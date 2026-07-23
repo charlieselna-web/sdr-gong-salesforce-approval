@@ -151,3 +151,45 @@ def main():
     ID: `{payload["salesforce_match"]["opportunity"]["id"]}`
 
     Field: `NANT_Notes__c`
+
+## Approval
+
+Approval ID:
+
+`{approval_id}`
+
+Approval hash:
+
+`{approval_hash}`
+
+To approve, comment this exact line:
+
+`/approve {approval_hash}`
+""")
+
+issue_result = run(
+    ["gh", "issue", "create", "--title", title, "--body", body]
+)
+
+issue_url = issue_result.stdout.strip().splitlines()[-1]
+issue_number = issue_url.rstrip("/").split("/")[-1]
+
+payload["github_issue"] = {
+    "number": issue_number,
+    "url": issue_url,
+}
+
+payload_path = Path("data") / "approvals" / f"{approval_id}.json"
+payload_path.parent.mkdir(parents=True, exist_ok=True)
+payload_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+git_commit_and_push(payload_path, approval_id)
+
+print(f"Created test approval issue for {approval_id}")
+print(f"Issue: {issue_url}")
+print(f"Payload: {payload_path}")
+print(f"Approval hash: {approval_hash}")
+
+
+if __name__ == "__main__":
+main()
