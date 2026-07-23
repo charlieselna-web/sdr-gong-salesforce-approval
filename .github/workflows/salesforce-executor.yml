@@ -4,7 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       approval_id:
-        description: "Approval ID, for example gong-123456789"
+        description: "Approval ID, for example gong-test-20260101123000"
+        required: true
+        type: string
+      issue_number:
+        description: "GitHub Issue number containing the approval payload"
         required: true
         type: string
 
@@ -23,9 +27,10 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Placeholder Salesforce executor
+      - name: Execute approved payload in test mode
         run: |
-          echo "Approved handoff worked."
-          echo "Would execute Salesforce update for approval:"
-          echo "${{ inputs.approval_id }}"
-          echo "No Salesforce update is happening yet."
+          python scripts/execute_salesforce_update.py \
+            --approval-id "${{ inputs.approval_id }}" \
+            --issue-number "${{ inputs.issue_number }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
