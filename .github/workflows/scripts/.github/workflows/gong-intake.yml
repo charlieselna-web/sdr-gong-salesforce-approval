@@ -1,0 +1,21 @@
+name: Gong Intake
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  intake:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create test approval issue
+        run: |
+          python scripts/poll_gong_calls.py
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
