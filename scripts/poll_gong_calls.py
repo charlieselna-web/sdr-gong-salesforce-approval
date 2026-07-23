@@ -4,7 +4,6 @@ import subprocess
 import sys
 import textwrap
 from datetime import datetime, timezone
-from pathlib import Path
 
 
 def run(command):
@@ -31,44 +30,6 @@ def run(command):
     return result
 
 
-def git_commit_and_push(path, approval_id):
-    run(["git", "config", "user.name", "github-actions[bot]"])
-    run([
-        "git",
-        "config",
-        "user.email",
-        "41898282+github-actions[bot]@users.noreply.github.com",
-    ])
-
-    run(["git", "add", str(path)])
-
-    commit = subprocess.run(
-        ["git", "commit", "-m", f"Add approval payload {approval_id}"],
-        text=True,
-        capture_output=True,
-    )
-
-    if commit.stdout:
-        print("GIT COMMIT STDOUT:")
-        print(commit.stdout)
-
-    if commit.stderr:
-        print("GIT COMMIT STDERR:")
-        print(commit.stderr)
-
-    if commit.returncode != 0:
-        output = commit.stdout + commit.stderr
-
-        if "nothing to commit" in output:
-            print("Nothing to commit.")
-            return
-
-        print("git commit failed")
-        sys.exit(commit.returncode)
-
-    run(["git", "push"])
-
-
 def main():
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
     approval_id = f"gong-test-{timestamp}"
@@ -83,13 +44,13 @@ def main():
             "account": {
                 "name": "Acme Corp",
                 "id": "001TEST",
-                "confidence": "high",
+                "confidence": "high"
             },
             "contact": {
                 "name": "Jane Buyer",
                 "id": "003TEST",
                 "email": "jane.buyer@acme.example",
-                "confidence": "high",
+                "confidence": "high"
             },
             "lead": None,
             "opportunity": {
@@ -97,38 +58,32 @@ def main():
                 "id": "006TEST",
                 "stage": "S0",
                 "is_open": True,
-                "confidence": "high",
-            },
+                "confidence": "high"
+            }
         },
         "nant_notes": {
             "need": "Prospect wants to improve knowledge discovery across internal tools.",
             "authority": "Jane Buyer is evaluating vendors and will involve IT leadership.",
             "negative_consequences": "Continued manual searching and duplicated work.",
             "timeline": "Initial evaluation this quarter.",
-            "next_step": "Send follow-up and schedule technical discovery.",
+            "next_step": "Send follow-up and schedule technical discovery."
         },
         "proposed_salesforce_changes": [
             {
                 "object": "Opportunity",
                 "id": "006TEST",
                 "fields": {
-                    "NANT_Notes__c": (
-                        "Need: Prospect wants to improve knowledge discovery across internal tools.\n"
-                        "Authority: Jane Buyer is evaluating vendors and will involve IT leadership.\n"
-                        "Negative consequences: Continued manual searching and duplicated work.\n"
-                        "Timeline: Initial evaluation this quarter.\n"
-                        "Next step: Send follow-up and schedule technical discovery."
-                    ),
+                    "NANT_Notes__c": "Need: Prospect wants to improve knowledge discovery across internal tools.\nAuthority: Jane Buyer is evaluating vendors and will involve IT leadership.\nNegative consequences: Continued manual searching and duplicated work.\nTimeline: Initial evaluation this quarter.\nNext step: Send follow-up and schedule technical discovery.",
                     "NextStep": "Send follow-up and schedule technical discovery.",
-                    "Last_Gong_Call_ID__c": f"test-gong-call-{timestamp}",
-                },
+                    "Last_Gong_Call_ID__c": f"test-gong-call-{timestamp}"
+                }
             }
         ],
         "duplicate_prevention": {
             "idempotency_key": f"gong:test-gong-call-{timestamp}:sf:006TEST:nant:v1",
-            "status": "not_checked_yet",
+            "status": "not_checked_yet"
         },
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat()
     }
 
     approval_hash = "sha256:" + hashlib.sha256(
@@ -137,12 +92,14 @@ def main():
 
     payload["approval_hash"] = approval_hash
 
+    payload_json = json.dumps(payload, indent=2, sort_keys=True)
+
     title = f"TEST Approval needed: Acme Corp Gong call {timestamp}"
 
     body = textwrap.dedent(f"""
     ## Test Approval Request
 
-    This is a fake test approval request. It does **not** write to Salesforce.
+    This is a fake test approval request. It does not write to Salesforce.
 
     ## Gong Call
 
@@ -169,10 +126,44 @@ def main():
 
     **Next step:** {payload["nant_notes"]["next_step"]}
 
-    ## Proposed Salesforce Change
+    ## Approval
 
-    Object: `Opportunity`
+    Approval ID:
 
-    ID: `{payload["salesforce_match"]["opportunity"]["id"]}`
+    `{approval_id}`
 
-    Field: `NANT_Notes__c`
+    Approval hash:
+
+    `{approval_hash}`
+
+    To approve, comment this exact line:
+
+    `/approve {approval_hash}`
+
+    ## Machine Payload
+
+    Do not edit this section.
+
+    <details>
+    <summary>payload</summary>
+
+    PAYLOAD_JSON_START
+    {payload_json}
+    PAYLOAD_JSON_END
+
+    </details>
+    """)
+
+    issue_result = run(
+        ["gh", "issue", "create", "--title", title, "--body", body]
+    )
+
+    issue_url = issue_result.stdout.strip().splitlines()[-1]
+
+    print(f"Created test approval issue for {approval_id}")
+    print(f"Issue: {issue_url}")
+    print(f"Approval hash: {approval_hash}")
+
+
+if __name__ == "__main__":
+    main()
