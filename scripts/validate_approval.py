@@ -8,17 +8,26 @@ from pathlib import Path
 
 def load_approvers():
     path = Path("config/approvers.yml")
+
     if not path.exists():
         print("Missing config/approvers.yml")
         sys.exit(1)
 
     approvers = set()
+
     for line in path.read_text().splitlines():
         line = line.strip()
-        if line.startswith("github_username:"):
-            username = line.split(":", 1)[1].strip()
-            approvers.add(username)
 
+        match = re.search(r"(?:^-\s*)?github_username\s*:\s*([A-Za-z0-9-]+)", line)
+
+        if match:
+            approvers.add(match.group(1).strip().lower())
+
+    if not approvers:
+        print("No approvers found in config/approvers.yml")
+        sys.exit(1)
+
+    print(f"Loaded approvers: {sorted(approvers)}")
     return approvers
 
 
@@ -29,18 +38,14 @@ def get_issue_body(issue_number):
         text=True,
         capture_output=True,
     )
+
     return json.loads(result.stdout)["body"]
 
 
 def extract_backtick_value(label, body):
-    pattern = rf"{re.escape(label)}:\s*`([^`]+)`"
-    match = re.search(pattern, body, re.IGNORECASE | re.MULTILINE)
-    if match:
-        return match.group(1).strip()
+    pattern = rf"{re.escape(label)}\s*:\s*(?:\r?\n\s*)*`([^`]+)`"
+    match = re.search(pattern, body, re.IGNORECASE)
 
-    # Handles format where label is followed by blank lines, then backtick value.
-    pattern = rf"{re.escape(label)}\s*:\s*\n+\s*`([^`]+)`"
-    match = re.search(pattern, body, re.IGNORECASE | re.MULTILINE)
     if match:
         return match.group(1).strip()
 
@@ -52,21 +57,25 @@ def main():
     parser.add_argument("--issue-number", required=True)
     parser.add_argument("--actor", required=True)
     parser.add_argument("--comment", required=True)
+
     args = parser.parse_args()
 
     approvers = load_approvers()
+    actor = args.actor.strip().lower()
 
-    if args.actor not in approvers:
+    if actor not in approvers:
         print(f"Actor {args.actor} is not an approved approver.")
         print(f"Allowed approvers: {sorted(approvers)}")
         sys.exit(1)
 
     comment = args.comment.strip()
+
     if not comment.startswith("/approve"):
         print("Comment is not an approval command.")
         sys.exit(1)
 
     parts = comment.split()
+
     if len(parts) < 2:
         print("Approval command must include hash, like: /approve sha256:abc123")
         sys.exit(1)
@@ -94,7 +103,7 @@ def main():
 
     Path("approval_id.txt").write_text(approval_id)
 
-    print(f"Approval validated.")
+    print("Approval validated.")
     print(f"Approver: {args.actor}")
     print(f"Approval ID: {approval_id}")
 
