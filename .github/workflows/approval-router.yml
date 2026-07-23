@@ -1,0 +1,39 @@
+name: Approval Router
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+  actions: write
+
+jobs:
+  approve:
+    if: startsWith(github.event.comment.body, '/approve')
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Validate approval
+        run: |
+          python scripts/validate_approval.py \
+            --issue-number "${{ github.event.issue.number }}" \
+            --actor "${{ github.actor }}" \
+            --comment "${{ github.event.comment.body }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Trigger Salesforce executor
+        run: |
+          APPROVAL_ID="$(cat approval_id.txt)"
+
+          echo "Triggering Salesforce executor for approval: $APPROVAL_ID"
+
+          gh workflow run salesforce-executor.yml \
+            --ref main \
+            -f approval_id="$APPROVAL_ID"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
