@@ -1,0 +1,44 @@
+name: Salesforce Read-Only Match
+
+on:
+  workflow_dispatch:
+    inputs:
+      prospect_email:
+        description: "Prospect email to search, for example jane@acme.com"
+        required: true
+        type: string
+      company_domain:
+        description: "Company domain to search, for example acme.com"
+        required: true
+        type: string
+      account_name:
+        description: "Optional account name, for example Acme Corp"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  match:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Salesforce read-only matcher
+        run: |
+          python scripts/salesforce_readonly_match.py \
+            --prospect-email "${{ inputs.prospect_email }}" \
+            --company-domain "${{ inputs.company_domain }}" \
+            --account-name "${{ inputs.account_name }}"
+        env:
+          SALESFORCE_USERNAME: ${{ secrets.SALESFORCE_USERNAME }}
+          SALESFORCE_PASSWORD: ${{ secrets.SALESFORCE_PASSWORD }}
+          SALESFORCE_SECURITY_TOKEN: ${{ secrets.SALESFORCE_SECURITY_TOKEN }}
+          SALESFORCE_DOMAIN: ${{ secrets.SALESFORCE_DOMAIN }}
