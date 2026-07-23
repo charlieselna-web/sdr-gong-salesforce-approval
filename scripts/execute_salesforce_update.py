@@ -8,12 +8,27 @@ from pathlib import Path
 
 
 def run(command):
-    return subprocess.run(
+    print(f"Running: {' '.join(command)}")
+
+    result = subprocess.run(
         command,
-        check=True,
         text=True,
         capture_output=True,
     )
+
+    if result.stdout:
+        print("STDOUT:")
+        print(result.stdout)
+
+    if result.stderr:
+        print("STDERR:")
+        print(result.stderr)
+
+    if result.returncode != 0:
+        print(f"Command failed with exit code {result.returncode}")
+        sys.exit(result.returncode)
+
+    return result
 
 
 def load_approvers():
@@ -36,26 +51,54 @@ def load_approvers():
         print("No approvers found in config/approvers.yml")
         sys.exit(1)
 
+    print(f"Loaded approvers: {sorted(approvers)}")
     return approvers
 
 
-def get_issue_comments(issue_number):
+def get_issue(issue_number):
     result = run([
         "gh",
         "issue",
         "view",
         str(issue_number),
         "--json",
-        "comments",
+        "body,comments,title,state",
     ])
 
-    data = json.loads(result.stdout)
-    return data.get("comments", [])
+    return json.loads(result.stdout)
 
 
-def find_valid_approval_comment(issue_number, approval_hash, approvers):
-    comments = get_issue_comments(issue_number)
+def extract_payload_from_issue_body(body):
+    match = re.search(
+        r"PAYLOAD_JSON_START\s*(.*?)\s*PAYLOAD_JSON_END",
+        body,
+        re.DOTALL,
+    )
 
+    if not match:
+        print("Could not find machine payload in issue body.")
+        sys.exit(1)
+
+    payload_text = match.group(1).strip()
+
+    try:
+        return json.loads(payload_text)
+    except json.JSONDecodeError as error:
+        print("Could not parse payload JSON from issue body.")
+        print(error)
+        sys.exit(1)
+
+
+def already_executed(comments):
+    for comment in comments:
+        body = comment.get("body", "")
+        if "✅ Test executor completed" in body:
+            return True
+
+    return False
+
+
+def find_valid_approval_comment(comments, approval_hash, approvers):
     for comment in comments:
         body = comment.get("body", "").strip()
         author = comment.get("author", {}).get("login", "").lower()
@@ -80,35 +123,6 @@ def find_valid_approval_comment(issue_number, approval_hash, approvers):
     return None
 
 
-def git_commit_and_push(path, approval_id):
-    run(["git", "config", "user.name", "github-actions[bot]"])
-    run([
-        "git",
-        "config",
-        "user.email",
-        "41898282+github-actions[bot]@users.noreply.github.com",
-    ])
-
-    run(["git", "add", str(path)])
-
-    commit = subprocess.run(
-        ["git", "commit", "-m", f"Mark approval executed {approval_id}"],
-        text=True,
-        capture_output=True,
-    )
-
-    if commit.returncode != 0:
-        output = commit.stdout + commit.stderr
-        if "nothing to commit" in output:
-            print("Nothing to commit.")
-            return
-        print(output)
-        raise RuntimeError("git commit failed")
-
-    push = run(["git", "push"])
-    print(push.stdout)
-
-
 def comment_on_issue(issue_number, body):
     run([
         "gh",
@@ -123,41 +137,45 @@ def comment_on_issue(issue_number, body):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--approval-id", required=True)
+    parser.add_argument("--issue-number", required=True)
+
     args = parser.parse_args()
 
-    approval_id = args.approval_id
-    payload_path = Path("data") / "approvals" / f"{approval_id}.json"
+    issue = get_issue(args.issue_number)
+    body = issue["body"]
+    comments = issue.get("comments", [])
 
-    if not payload_path.exists():
-        print(f"Missing approval payload: {payload_path}")
+    payload = extract_payload_from_issue_body(body)
+
+    if payload.get("approval_id") != args.approval_id:
+        print("Approval ID mismatch.")
+        print(f"Workflow approval ID: {args.approval_id}")
+        print(f"Payload approval ID:  {payload.get('approval_id')}")
         sys.exit(1)
 
-    payload = json.loads(payload_path.read_text())
-
-    issue_number = payload.get("github_issue", {}).get("number")
     approval_hash = payload.get("approval_hash")
 
-    if not issue_number:
-        print("Payload is missing github_issue.number")
-        sys.exit(1)
-
     if not approval_hash:
-        print("Payload is missing approval_hash")
+        print("Payload is missing approval_hash.")
         sys.exit(1)
 
-    if payload.get("status") in {"executed_test", "executed"}:
-        print("Duplicate prevented: this approval was already executed.")
+    if already_executed(comments):
+        print("Duplicate prevented: this issue already has a completed executor comment.")
 
         comment_on_issue(
-            issue_number,
-            "⚠️ Duplicate prevented: this approval payload was already executed. "
-            "No Salesforce update was made.",
+            args.issue_number,
+            "⚠️ Duplicate prevented: this approval was already executed in test mode. No Salesforce update was made.",
         )
 
         return
 
     approvers = load_approvers()
-    approval = find_valid_approval_comment(issue_number, approval_hash, approvers)
+
+    approval = find_valid_approval_comment(
+        comments=comments,
+        approval_hash=approval_hash,
+        approvers=approvers,
+    )
 
     if not approval:
         print("No valid approval comment found.")
@@ -167,38 +185,25 @@ def main():
     print("Valid approval found.")
     print(f"Approved by: {approval['approved_by']}")
 
-    # Test-mode execution only.
-    # This is where the real Salesforce update will go later.
+    print("Loaded payload:")
+    print(json.dumps(payload, indent=2, sort_keys=True))
+
     print("TEST MODE: Salesforce update would happen here.")
     print("No Salesforce update was made.")
 
-    payload["status"] = "executed_test"
-    payload["approval"] = {
-        "approved_by": approval["approved_by"],
-        "approved_at": approval["approved_at"],
-        "approval_hash": approval_hash,
-    }
-    payload["execution"] = {
-        "mode": "test",
-        "executed_at": datetime.now(timezone.utc).isoformat(),
-        "salesforce_update_performed": False,
-        "message": "Approval handoff verified. Salesforce update was not performed.",
-    }
-    payload["duplicate_prevention"]["status"] = "simulated_passed"
-
-    payload_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
-
-    git_commit_and_push(payload_path, approval_id)
+    executed_at = datetime.now(timezone.utc).isoformat()
 
     comment_on_issue(
-        issue_number,
+        args.issue_number,
         f"""✅ Test executor completed.
 
-Approval ID: `{approval_id}`
+Approval ID: `{args.approval_id}`
 
 Approved by: `{approval["approved_by"]}`
 
-Result: approval was verified, payload was loaded, duplicate guard was checked, and the executor completed in test mode.
+Executed at: `{executed_at}`
+
+Result: approval was verified, the machine payload was loaded from the Issue, duplicate protection was checked, and the executor completed in test mode.
 
 No Salesforce update was made yet.
 """,
