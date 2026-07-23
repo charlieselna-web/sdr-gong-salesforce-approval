@@ -1,18 +1,34 @@
 import hashlib
 import json
 import subprocess
+import sys
 import textwrap
 from datetime import datetime, timezone
 from pathlib import Path
 
 
 def run(command):
-    return subprocess.run(
+    print(f"Running: {' '.join(command)}")
+
+    result = subprocess.run(
         command,
-        check=True,
         text=True,
         capture_output=True,
     )
+
+    if result.stdout:
+        print("STDOUT:")
+        print(result.stdout)
+
+    if result.stderr:
+        print("STDERR:")
+        print(result.stderr)
+
+    if result.returncode != 0:
+        print(f"Command failed with exit code {result.returncode}")
+        sys.exit(result.returncode)
+
+    return result
 
 
 def git_commit_and_push(path, approval_id):
@@ -32,16 +48,25 @@ def git_commit_and_push(path, approval_id):
         capture_output=True,
     )
 
+    if commit.stdout:
+        print("GIT COMMIT STDOUT:")
+        print(commit.stdout)
+
+    if commit.stderr:
+        print("GIT COMMIT STDERR:")
+        print(commit.stderr)
+
     if commit.returncode != 0:
         output = commit.stdout + commit.stderr
+
         if "nothing to commit" in output:
             print("Nothing to commit.")
             return
-        print(output)
-        raise RuntimeError("git commit failed")
 
-    push = run(["git", "push"])
-    print(push.stdout)
+        print("git commit failed")
+        sys.exit(commit.returncode)
+
+    run(["git", "push"])
 
 
 def main():
@@ -151,45 +176,3 @@ def main():
     ID: `{payload["salesforce_match"]["opportunity"]["id"]}`
 
     Field: `NANT_Notes__c`
-
-## Approval
-
-Approval ID:
-
-`{approval_id}`
-
-Approval hash:
-
-`{approval_hash}`
-
-To approve, comment this exact line:
-
-`/approve {approval_hash}`
-""")
-
-issue_result = run(
-    ["gh", "issue", "create", "--title", title, "--body", body]
-)
-
-issue_url = issue_result.stdout.strip().splitlines()[-1]
-issue_number = issue_url.rstrip("/").split("/")[-1]
-
-payload["github_issue"] = {
-    "number": issue_number,
-    "url": issue_url,
-}
-
-payload_path = Path("data") / "approvals" / f"{approval_id}.json"
-payload_path.parent.mkdir(parents=True, exist_ok=True)
-payload_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
-
-git_commit_and_push(payload_path, approval_id)
-
-print(f"Created test approval issue for {approval_id}")
-print(f"Issue: {issue_url}")
-print(f"Payload: {payload_path}")
-print(f"Approval hash: {approval_hash}")
-
-
-if __name__ == "__main__":
-main()
