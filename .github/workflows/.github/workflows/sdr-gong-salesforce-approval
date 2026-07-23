@@ -1,0 +1,20 @@
+.github/workflows/
+  gong-intake.yml
+  approval-router.yml
+  salesforce-executor.yml
+
+scripts/
+  poll_gong_calls.py
+  intake_gong_call.py
+  match_salesforce.py
+  create_approval_issue.py
+  validate_approval.py
+  execute_salesforce_update.py
+
+config/
+  approvers.yml
+  salesforce_mapping.yml
+
+data/
+  approvals/
+  ledger/
