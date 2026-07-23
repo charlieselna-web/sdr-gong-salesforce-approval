@@ -20,20 +20,26 @@ jobs:
       - name: Validate approval
         run: |
           python scripts/validate_approval.py \
-            --issue-number "${{ github.event.issue.number }}" \
-            --actor "${{ github.actor }}" \
-            --comment "${{ github.event.comment.body }}"
+            --issue-number "$ISSUE_NUMBER" \
+            --actor "$ACTOR" \
+            --comment "$COMMENT_BODY"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ACTOR: ${{ github.actor }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
 
       - name: Trigger Salesforce executor
         run: |
           APPROVAL_ID="$(cat approval_id.txt)"
 
           echo "Triggering Salesforce executor for approval: $APPROVAL_ID"
+          echo "Issue number: $ISSUE_NUMBER"
 
           gh workflow run salesforce-executor.yml \
             --ref main \
-            -f approval_id="$APPROVAL_ID"
+            -f approval_id="$APPROVAL_ID" \
+            -f issue_number="$ISSUE_NUMBER"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
