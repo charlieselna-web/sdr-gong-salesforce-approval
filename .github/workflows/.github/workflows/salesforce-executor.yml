@@ -1,0 +1,29 @@
+name: Salesforce Executor
+
+on:
+  workflow_dispatch:
+    inputs:
+      approval_id:
+        description: "Approval ID, for example gong-123456789"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: sf-executor-${{ inputs.approval_id }}
+  cancel-in-progress: false
+
+jobs:
+  execute:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Placeholder Salesforce executor
+        run: |
+          echo "Would execute Salesforce update for approval:"
+          echo "${{ inputs.approval_id }}"
